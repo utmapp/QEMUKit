@@ -47,7 +47,7 @@ enum ParserState {
     self = [super init];
     if (self) {
         self.recieveQueue = dispatch_queue_create("QEMUJSONStream Receiver", NULL);
-        dispatch_queue_attr_t attr = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, QOS_MIN_RELATIVE_PRIORITY);
+        dispatch_queue_attr_t attr = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, 0);
         self.sendQueue = dispatch_queue_create("QEMUJSONStream Sender", attr);
         self.port = port;
         self.data = [NSMutableData data];

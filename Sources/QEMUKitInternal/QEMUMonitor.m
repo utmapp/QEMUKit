@@ -136,7 +136,7 @@ qapi_enum_handler_registry qapi_enum_handler_registry_data = {
 
 - (instancetype)initWithPort:(id<QEMUPort>)port {
     if (self = [super initWithPort:port]) {
-        dispatch_queue_attr_t attr = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, QOS_MIN_RELATIVE_PRIORITY);
+        dispatch_queue_attr_t attr = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, 0);
         self.monitorQueue = dispatch_queue_create("QEMU Monitor", attr);
     }
     return self;
