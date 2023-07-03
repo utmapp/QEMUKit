@@ -313,10 +313,9 @@ public actor QEMUVirtualMachine {
     
     /// Called when QEMU process has exited
     ///
-    /// If QEMU is starting, this is an unexpected termination.
+    /// If QEMU is starting, ignore event, otherwise kill the service
     fileprivate func didStop() {
         guard state != .starting else {
-            didError(QEMUError.terminatedUnexpectedly)
             return
         }
         kill()
@@ -372,10 +371,12 @@ extension QEMUCoordinator: QEMULauncherDelegate {
             let message = message ?? String.localizedStringWithFormat(NSLocalizedString("QEMU exited from an error: %@", comment: "QEMUVirtualMachine"), lastErrorLine ?? unknown)
             Task {
                 await operations.didError(QEMUError.qemuError(message))
+                await operations.didStop()
             }
-        }
-        Task {
-            await operations.didStop()
+        } else {
+            Task {
+                await operations.didStop()
+            }
         }
     }
 }
