@@ -78,6 +78,12 @@ public actor QEMUVirtualMachine {
         self.delegate = delegate
     }
     
+    /// Set the redirect log file
+    /// - Parameter url: File URL (nil to unset)
+    public func setRedirectLog(url: URL?) {
+        self.redirectLogURL = url
+    }
+    
     /// Start a new QEMU instance
     ///
     /// The caller provides a `launcher` and a `ui` which are used in the startup process.
