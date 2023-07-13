@@ -132,7 +132,11 @@ error:
 }
 
 - (NSArray<NSString *> *)parseLinesFromData:(NSData *)data buffer:(NSString **)buffer {
-    NSString *string = [*buffer stringByAppendingString:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]];
+    NSString *line = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    if (!line) {
+        return @[];
+    }
+    NSString *string = [*buffer stringByAppendingString:line];
     NSArray *lines = [string componentsSeparatedByString:@"\n"];
     *buffer = [lines lastObject];
     if (lines.count > 0) {
