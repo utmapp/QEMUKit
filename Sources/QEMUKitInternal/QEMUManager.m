@@ -21,13 +21,20 @@
 
 NSString *const kQEMUKitErrorDomain = @"com.utmapp.QEMUKit";
 
-typedef void(^rpcCompletionHandler_t)(NSDictionary *, NSError *);
+typedef void(^rpcCompletionHandler_t)(NSDictionary *, NSString *);
 
 @interface QEMUManager ()
 
+/// Synchronizes calls to `self.rpcQueue`
+@property (nonatomic) dispatch_queue_t rpcQueue;
+
+/// Used to ensure that `qmp_rpc_call` only has one outstanding call
+@property (nonatomic) dispatch_semaphore_t rpcLock;
+
+/// Must be modified or called from `self.rpcQueue`
 @property (nonatomic, nullable) rpcCompletionHandler_t rpcCallback;
+
 @property (nonatomic) QEMUJSONStream *jsonStream;
-@property (nonatomic) dispatch_semaphore_t cmdLock;
 
 @end
 
@@ -49,39 +56,43 @@ typedef void(^rpcCompletionHandler_t)(NSDictionary *, NSError *);
 
 void qmp_rpc_call(CFDictionaryRef args, CFDictionaryRef *ret, Error **err, void *ctx) {
     QEMUManager *self = (__bridge QEMUManager *)ctx;
-    dispatch_semaphore_t rpc_sema = dispatch_semaphore_create(0);
+    dispatch_semaphore_t rpcResponseEvent = dispatch_semaphore_create(0);
     __block NSDictionary *dict;
-    __block NSError *nserr;
+    __block NSString *nserr;
     __weak typeof(self) _self = self;
-    dispatch_semaphore_wait(self.cmdLock, DISPATCH_TIME_FOREVER);
-    self.rpcCallback = ^(NSDictionary *ret_dict, NSError *ret_err){
-        NSCAssert(ret_dict || ret_err, @"Both dict and err are null");
-        nserr = ret_err;
-        dict = ret_dict;
-        _self.rpcCallback = nil;
-        dispatch_semaphore_signal(rpc_sema); // copy to avoid race condition
-    };
-    if (![self.jsonStream sendDictionary:(__bridge NSDictionary *)args shouldSynchronize:self.shouldSynchronizeParser error:&nserr] && self.rpcCallback) {
-        self.rpcCallback(nil, nserr);
-    }
-    if (dispatch_semaphore_wait(rpc_sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)self.timeoutSeconds*NSEC_PER_SEC)) != 0) {
-        // possible race between this timeout and the callback being triggered
-        self.rpcCallback = ^(NSDictionary *ret_dict, NSError *ret_err){
+    // allow only one outgoing RPC call at a time
+    dispatch_semaphore_wait(self.rpcLock, DISPATCH_TIME_FOREVER);
+    dispatch_sync(self.rpcQueue, ^{
+        assert(!self.rpcCallback); // sync on rpcLock should prevent this!
+        self.rpcCallback = ^(NSDictionary *ret_dict, NSString *ret_err){
+            NSCAssert(ret_dict || ret_err, @"Both dict and err are null");
+            nserr = ret_err;
+            dict = ret_dict;
             _self.rpcCallback = nil;
+            dispatch_semaphore_signal(rpcResponseEvent);
         };
-        nserr = [NSError errorWithDomain:kQEMUKitErrorDomain code:-1 userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"Timed out waiting for RPC.", "QEMUManager")}];
+        NSError *_err;
+        if (![self.jsonStream sendDictionary:(__bridge NSDictionary *)args shouldSynchronize:self.shouldSynchronizeParser error:&_err]) {
+            self.rpcCallback(nil, _err.localizedDescription);
+        }
+    });
+    if (dispatch_semaphore_wait(rpcResponseEvent, dispatch_time(DISPATCH_TIME_NOW, (int64_t)self.timeoutSeconds*NSEC_PER_SEC)) != 0) {
+        dispatch_sync(self.rpcQueue, ^{
+            if (self.rpcCallback) {
+                self.rpcCallback(nil, NSLocalizedString(@"Timed out waiting for RPC.", "QEMUManager"));
+            }
+        });
     }
     if (ret) {
         *ret = CFBridgingRetain(dict);
     }
-    dict = nil;
     if (nserr) {
         if (err) {
-            error_setg(err, "%s", [nserr.localizedDescription cStringUsingEncoding:NSUTF8StringEncoding]);
+            error_setg(err, "%s", nserr.UTF8String);
         }
         QEMUKitLog(@"RPC: %@", nserr);
     }
-    dispatch_semaphore_signal(self.cmdLock);
+    dispatch_semaphore_signal(self.rpcLock);
 }
 
 - (instancetype)initWithPort:(id<QEMUPort>)port {
@@ -89,15 +100,11 @@ void qmp_rpc_call(CFDictionaryRef args, CFDictionaryRef *ret, Error **err, void 
     if (self) {
         self.jsonStream = [[QEMUJSONStream alloc] initWithPort:port];
         self.jsonStream.delegate = self;
-        self.cmdLock = dispatch_semaphore_create(1);
+        dispatch_queue_attr_t attr = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, 0);
+        self.rpcQueue = dispatch_queue_create("QEMUManager RPC Queue", attr);
+        self.rpcLock = dispatch_semaphore_create(1);
     }
     return self;
-}
-
-- (void)dealloc {
-    if (self.rpcCallback) {
-        self.rpcCallback(nil, [NSError errorWithDomain:kQEMUKitErrorDomain code:-1 userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"Manager being deallocated, killing pending RPC.", "QEMUManager")}]);
-    }
 }
 
 - (void)jsonStream:(QEMUJSONStream *)stream connected:(BOOL)connected {
@@ -109,26 +116,32 @@ void qmp_rpc_call(CFDictionaryRef args, CFDictionaryRef *ret, Error **err, void 
 
 - (void)jsonStream:(QEMUJSONStream *)stream seenError:(NSError *)error {
     QEMUKitLog(@"QMP stream error seen: %@", error);
-    if (self.rpcCallback) {
-        self.rpcCallback(nil, error);
-    }
+    dispatch_async(self.rpcQueue, ^{
+        if (self.rpcCallback) {
+            self.rpcCallback(nil, error.localizedDescription);
+        }
+    });
 }
 
 - (void)jsonStream:(QEMUJSONStream *)stream receivedDictionary:(NSDictionary *)dict {
     [dict enumerateKeysAndObjectsUsingBlock:^(id key, id val, BOOL *stop) {
         if ([key isEqualToString:@"return"]) {
-            if (self.rpcCallback) {
-                self.rpcCallback(dict, nil);
-            } else {
-                QEMUKitLog(@"Got unexpected 'return' response: %@", dict);
-            }
+            dispatch_async(self.rpcQueue, ^{
+                if (self.rpcCallback) {
+                    self.rpcCallback(dict, nil);
+                } else {
+                    QEMUKitLog(@"Got unexpected 'return' response: %@", dict);
+                }
+            });
             *stop = YES;
         } else if ([key isEqualToString:@"error"]) {
-            if (self.rpcCallback) {
-                self.rpcCallback(nil, [NSError errorWithDomain:kQEMUKitErrorDomain code:-1 userInfo:@{NSLocalizedDescriptionKey: dict[@"error"][@"desc"]}]);
-            } else {
-                QEMUKitLog(@"Got unexpected 'error' response: %@", dict);
-            }
+            dispatch_async(self.rpcQueue, ^{
+                if (self.rpcCallback) {
+                    self.rpcCallback(nil, dict[@"error"][@"desc"]);
+                } else {
+                    QEMUKitLog(@"Got unexpected 'error' response: %@", dict);
+                }
+            });
             *stop = YES;
         } else if ([key isEqualToString:@"event"]) {
             const char *event = [dict[@"event"] cStringUsingEncoding:NSASCIIStringEncoding];
