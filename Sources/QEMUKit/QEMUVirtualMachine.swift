@@ -152,6 +152,7 @@ public actor QEMUVirtualMachine {
             }
         }
         monitor.delegate = coordinator
+        monitor.logging = logging
         
         // wait for QMP connection
         try Task.checkCancellation()
@@ -255,6 +256,7 @@ public actor QEMUVirtualMachine {
         }
         self.guestAgent = guestAgent
         guestAgent.guestSetTime(NSDate.now.timeIntervalSince1970)
+        guestAgent.logging = launcher?.logging
     }
     
     fileprivate func didError(_ error: Error) {

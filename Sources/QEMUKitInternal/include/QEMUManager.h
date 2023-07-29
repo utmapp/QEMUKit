@@ -17,6 +17,7 @@
 #import <Foundation/Foundation.h>
 #import "QEMUMonitorDelegate.h"
 
+@class QEMULogging;
 @protocol QEMUPort;
 
 NS_ASSUME_NONNULL_BEGIN
@@ -24,6 +25,7 @@ NS_ASSUME_NONNULL_BEGIN
 @interface QEMUManager : NSObject
 
 @property (nonatomic, readonly) BOOL isConnected;
+@property (nonatomic, weak) QEMULogging *logging;
 
 - (instancetype)init NS_UNAVAILABLE;
 - (instancetype)initWithPort:(id<QEMUPort>)port NS_DESIGNATED_INITIALIZER;

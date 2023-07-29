@@ -22,13 +22,15 @@
 
 static QEMULogging *gLoggingInstance;
 
-void QEMUKitLog(NSString *format, ...) {
+void _QEMUKitLog(QEMULogging *logging, NSString *format, ...) {
     va_list args;
     va_start(args, format);
     NSString *line = [[NSString alloc] initWithFormat:[format stringByAppendingString:@"\n"] arguments:args];
-    [[QEMULogging sharedInstance] writeLine:line];
     va_end(args);
-    NSLog(@"%@", line);
+    [logging writeLine:line];
+    if (!logging) {
+        [[QEMULogging sharedInstance] writeLine:line];
+    }
 }
 
 @interface QEMULogging ()
@@ -165,6 +167,7 @@ error:
 }
 
 - (void)writeLine:(NSString *)line {
+    NSLog(@"[QEMULogging(%p)] %@", self, line);
     [self.fileOutputStream write:(void *)[line cStringUsingEncoding:NSASCIIStringEncoding] maxLength:line.length];
 }
 

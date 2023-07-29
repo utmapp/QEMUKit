@@ -54,6 +54,11 @@ typedef void(^rpcCompletionHandler_t)(NSDictionary *, NSString *);
     return NO;
 }
 
+- (void)setLogging:(QEMULogging *)logging {
+    _logging = logging;
+    self.jsonStream.logging = logging;
+}
+
 void qmp_rpc_call(CFDictionaryRef args, CFDictionaryRef *ret, Error **err, void *ctx) {
     QEMUManager *self = (__bridge QEMUManager *)ctx;
     dispatch_semaphore_t rpcResponseEvent = dispatch_semaphore_create(0);

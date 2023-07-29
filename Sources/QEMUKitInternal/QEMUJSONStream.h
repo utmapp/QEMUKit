@@ -17,6 +17,7 @@
 #import <Foundation/Foundation.h>
 #import "QEMUJSONStreamDelegate.h"
 
+@class QEMULogging;
 @protocol QEMUPort;
 
 NS_ASSUME_NONNULL_BEGIN
@@ -25,6 +26,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (nonatomic, readonly) id<QEMUPort> port;
 @property (nonatomic, weak) id<QEMUJSONStreamDelegate> delegate;
+@property (nonatomic, weak) QEMULogging *logging;
 
 - (instancetype)init NS_UNAVAILABLE;
 - (instancetype)initWithPort:(id<QEMUPort>)port NS_DESIGNATED_INITIALIZER;

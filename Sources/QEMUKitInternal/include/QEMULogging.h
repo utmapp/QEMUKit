@@ -19,7 +19,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-void QEMUKitLog(NSString *format, ...) NS_FORMAT_FUNCTION(1,2) NS_NO_TAIL_CALL;
+#define QEMUKitLog(...) _QEMUKitLog(self.logging, __VA_ARGS__)
+void _QEMUKitLog(QEMULogging *logging, NSString *format, ...) NS_FORMAT_FUNCTION(2,3) NS_NO_TAIL_CALL;
 
 @interface QEMULogging : NSObject
 
