@@ -484,11 +484,11 @@ extension QEMUCoordinator: QEMULoggingDelegate {
         success = success && scanner.scanString("char device redirected to ") != nil
         let devpath = scanner.scanUpToString(" ")
         success = success && devpath != nil
-        success = success && scanner.scanString(" (label ") != nil
+        success = success && scanner.scanString("(label ") != nil
         let label = scanner.scanUpToString(")")
         success = success && label != nil
         success = success && scanner.scanString(")") != nil
-        if !scanner.isAtEnd && success {
+        if scanner.isAtEnd && success {
             logger.info("Detected PTTY at '\(devpath!)' for device \(label!)")
             Task {
                 await operations.delegate?.qemuVM(operations, didCreatePttyDevice: devpath!, label: label!)
