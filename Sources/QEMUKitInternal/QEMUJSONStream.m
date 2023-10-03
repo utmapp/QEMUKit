@@ -52,22 +52,23 @@ enum ParserState {
         self.port = port;
         self.data = [NSMutableData data];
         __weak typeof(port) weakPort = port;
+        __weak typeof(self) weakSelf = self;
         port.readDataHandler = ^(NSData * _Nonnull data) {
             typeof(port) port = weakPort;
             if (port) {
-                [self port:port didRecieveData:data];
+                [weakSelf port:port didRecieveData:data];
             }
         };
         port.errorHandler = ^(NSString * _Nonnull error) {
             typeof(port) port = weakPort;
             if (port) {
-                [self port:port didError:error];
+                [weakSelf port:port didError:error];
             }
         };
         port.disconnectHandler = ^{
             typeof(port) port = weakPort;
             if (port) {
-                [self portDidDisconect:port];
+                [weakSelf portDidDisconect:port];
             }
         };
     }
