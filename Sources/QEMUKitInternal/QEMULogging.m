@@ -139,11 +139,12 @@ error:
         return @[];
     }
     NSString *string = [*buffer stringByAppendingString:line];
-    NSArray *lines = [string componentsSeparatedByString:@"\n"];
+    NSArray *lines = [string componentsSeparatedByCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"\r\n"]];
     *buffer = [lines lastObject];
     if (lines.count > 0) {
         lines = [lines subarrayWithRange:NSMakeRange(0, lines.count - 1)];
     }
+
     return lines;
 }
 
