@@ -60,6 +60,9 @@ bool visit_type_q_obj_blockdev_insert_medium_arg(Visitor *v, const char *name,
 bool visit_type_BlockdevChangeReadOnlyMode(Visitor *v, const char *name,
                  BlockdevChangeReadOnlyMode *obj, Error **errp);
 
+bool visit_type_BlockdevChangeFileLockingMode(Visitor *v, const char *name,
+                 BlockdevChangeFileLockingMode *obj, Error **errp);
+
 bool visit_type_q_obj_blockdev_change_medium_arg_members(Visitor *v, q_obj_blockdev_change_medium_arg *obj, Error **errp);
 
 bool visit_type_q_obj_blockdev_change_medium_arg(Visitor *v, const char *name,

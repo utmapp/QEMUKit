@@ -70,6 +70,18 @@ typedef enum BlockdevChangeReadOnlyMode {
 
 extern const QEnumLookup BlockdevChangeReadOnlyMode_lookup;
 
+typedef enum BlockdevChangeFileLockingMode {
+    BLOCKDEV_CHANGE_FILE_LOCKING_MODE_AUTO,
+    BLOCKDEV_CHANGE_FILE_LOCKING_MODE_OFF,
+    BLOCKDEV_CHANGE_FILE_LOCKING_MODE_ON,
+    BLOCKDEV_CHANGE_FILE_LOCKING_MODE__MAX,
+} BlockdevChangeFileLockingMode;
+
+#define BlockdevChangeFileLockingMode_str(val) \
+    qapi_enum_lookup(&BlockdevChangeFileLockingMode_lookup, (val))
+
+extern const QEnumLookup BlockdevChangeFileLockingMode_lookup;
+
 typedef struct q_obj_blockdev_change_medium_arg q_obj_blockdev_change_medium_arg;
 
 typedef struct q_obj_DEVICE_TRAY_MOVED_arg q_obj_DEVICE_TRAY_MOVED_arg;
@@ -155,6 +167,8 @@ struct q_obj_blockdev_change_medium_arg {
     bool force;
     bool has_read_only_mode;
     BlockdevChangeReadOnlyMode read_only_mode;
+    bool has_file_locking_mode;
+    BlockdevChangeFileLockingMode file_locking_mode;
 };
 
 void qapi_free_q_obj_blockdev_change_medium_arg(q_obj_blockdev_change_medium_arg *obj);

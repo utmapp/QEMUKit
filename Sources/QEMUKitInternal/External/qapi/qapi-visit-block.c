@@ -332,6 +332,15 @@ bool visit_type_BlockdevChangeReadOnlyMode(Visitor *v, const char *name,
     return ok;
 }
 
+bool visit_type_BlockdevChangeFileLockingMode(Visitor *v, const char *name,
+                 BlockdevChangeFileLockingMode *obj, Error **errp)
+{
+    int value = *obj;
+    bool ok = visit_type_enum(v, name, &value, &BlockdevChangeFileLockingMode_lookup, errp);
+    *obj = value;
+    return ok;
+}
+
 bool visit_type_q_obj_blockdev_change_medium_arg_members(Visitor *v, q_obj_blockdev_change_medium_arg *obj, Error **errp)
 {
     if (visit_optional(v, "device", &obj->has_device)) {
@@ -364,6 +373,11 @@ bool visit_type_q_obj_blockdev_change_medium_arg_members(Visitor *v, q_obj_block
     }
     if (visit_optional(v, "read-only-mode", &obj->has_read_only_mode)) {
         if (!visit_type_BlockdevChangeReadOnlyMode(v, "read-only-mode", &obj->read_only_mode, errp)) {
+            return false;
+        }
+    }
+    if (visit_optional(v, "file-locking-mode", &obj->has_file_locking_mode)) {
+        if (!visit_type_BlockdevChangeFileLockingMode(v, "file-locking-mode", &obj->file_locking_mode, errp)) {
             return false;
         }
     }

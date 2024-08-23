@@ -263,7 +263,7 @@ out:
     visit_free(v);
 }
 
-void qmp_blockdev_change_medium(bool has_device, const char *device, bool has_id, const char *id, const char *filename, bool has_format, const char *format, bool has_force, bool force, bool has_read_only_mode, BlockdevChangeReadOnlyMode read_only_mode, Error **errp, void *ctx)
+void qmp_blockdev_change_medium(bool has_device, const char *device, bool has_id, const char *id, const char *filename, bool has_format, const char *format, bool has_force, bool force, bool has_read_only_mode, BlockdevChangeReadOnlyMode read_only_mode, bool has_file_locking_mode, BlockdevChangeFileLockingMode file_locking_mode, Error **errp, void *ctx)
 
 {
     const char *cmdname = "blockdev-change-medium";
@@ -282,6 +282,8 @@ void qmp_blockdev_change_medium(bool has_device, const char *device, bool has_id
         .force = force,
         .has_read_only_mode = has_read_only_mode,
         .read_only_mode = read_only_mode,
+        .has_file_locking_mode = has_file_locking_mode,
+        .file_locking_mode = file_locking_mode,
     };
     q_obj_blockdev_change_medium_arg *argp = &_arg;
     v = cf_output_visitor_new((CFTypeRef *)&cfargs);

@@ -23,7 +23,7 @@ void qmp_blockdev_open_tray(bool has_device, const char *device, bool has_id, co
 void qmp_blockdev_close_tray(bool has_device, const char *device, bool has_id, const char *id, Error **errp, void *ctx);
 void qmp_blockdev_remove_medium(const char *id, Error **errp, void *ctx);
 void qmp_blockdev_insert_medium(const char *id, const char *node_name, Error **errp, void *ctx);
-void qmp_blockdev_change_medium(bool has_device, const char *device, bool has_id, const char *id, const char *filename, bool has_format, const char *format, bool has_force, bool force, bool has_read_only_mode, BlockdevChangeReadOnlyMode read_only_mode, Error **errp, void *ctx);
+void qmp_blockdev_change_medium(bool has_device, const char *device, bool has_id, const char *id, const char *filename, bool has_format, const char *format, bool has_force, bool force, bool has_read_only_mode, BlockdevChangeReadOnlyMode read_only_mode, bool has_file_locking_mode, BlockdevChangeFileLockingMode file_locking_mode, Error **errp, void *ctx);
 void qmp_block_set_io_throttle(BlockIOThrottle *arg, Error **errp, void *ctx);
 void qmp_block_latency_histogram_set(const char *id, bool has_boundaries, uint64List *boundaries, bool has_boundaries_read, uint64List *boundaries_read, bool has_boundaries_write, uint64List *boundaries_write, bool has_boundaries_flush, uint64List *boundaries_flush, Error **errp, void *ctx);
 

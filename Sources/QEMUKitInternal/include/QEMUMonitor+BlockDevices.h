@@ -24,6 +24,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (BOOL)ejectDrive:(NSString *)drive force:(BOOL)force error:(NSError * _Nullable *)error;
 - (BOOL)changeMediumForDrive:(NSString *)drive path:(NSString *)path error:(NSError * _Nullable *)error;
+- (BOOL)changeMediumForDrive:(NSString *)drive path:(NSString *)path locking:(BOOL)locking error:(NSError * _Nullable __autoreleasing *)error;
 
 @end
 

@@ -137,6 +137,15 @@ const QEnumLookup BlockdevChangeReadOnlyMode_lookup = {
     .size = BLOCKDEV_CHANGE_READ_ONLY_MODE__MAX
 };
 
+const QEnumLookup BlockdevChangeFileLockingMode_lookup = {
+    .array = (const char *const[]) {
+        [BLOCKDEV_CHANGE_FILE_LOCKING_MODE_AUTO] = "auto",
+        [BLOCKDEV_CHANGE_FILE_LOCKING_MODE_OFF] = "off",
+        [BLOCKDEV_CHANGE_FILE_LOCKING_MODE_ON] = "on",
+    },
+    .size = BLOCKDEV_CHANGE_FILE_LOCKING_MODE__MAX
+};
+
 void qapi_free_q_obj_blockdev_change_medium_arg(q_obj_blockdev_change_medium_arg *obj)
 {
     Visitor *v;
