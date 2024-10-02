@@ -30,6 +30,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)init NS_UNAVAILABLE;
 - (instancetype)initWithPort:(id<QEMUPort>)port NS_DESIGNATED_INITIALIZER;
 
+/// Cancel any RPC command in-flight
+- (void)cancel;
+
 @end
 
 NS_ASSUME_NONNULL_END

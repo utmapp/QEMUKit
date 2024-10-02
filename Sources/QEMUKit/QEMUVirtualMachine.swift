@@ -197,7 +197,14 @@ public actor QEMUVirtualMachine {
 #if DEBUG
         assert(monitor != nil)
 #endif
-        try await monitor!.qemuQuit()
+        do {
+            try await monitor!.qemuQuit()
+        } catch {
+            // if we're already stopped, ignore any errors
+            if state != .stopped {
+                throw error
+            }
+        }
 
     }
     
@@ -216,6 +223,7 @@ public actor QEMUVirtualMachine {
         assert(launcher != nil)
         assert(interface != nil)
 #endif
+        state = .stopped
         // unregister delegates
         monitor!.delegate = nil
         launcher!.launcherDelegate = nil
@@ -224,12 +232,14 @@ public actor QEMUVirtualMachine {
         launcher!.stopQemu()
         interface!.disconnect()
         launcher!.logging?.endLog()
+        // cancel any RPC
+        monitor?.cancel()
+        guestAgent?.cancel()
         // clear properties
         monitor = nil
         guestAgent = nil
         launcher = nil
         interface = nil
-        state = .stopped
         delegate?.qemuVMDidStop(self)
     }
     

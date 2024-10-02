@@ -18,6 +18,7 @@
 #import "QEMUJSONStream.h"
 #import "QEMULogging.h"
 #import "qapi-emit-events.h"
+#import <stdatomic.h>
 
 NSString *const kQEMUKitErrorDomain = @"com.utmapp.QEMUKit";
 
@@ -64,6 +65,7 @@ void qmp_rpc_call(CFDictionaryRef args, CFDictionaryRef *ret, Error **err, void 
     dispatch_semaphore_t rpcResponseEvent = dispatch_semaphore_create(0);
     __block NSDictionary *dict;
     __block NSString *nserr;
+    __block atomic_int isRpcCallbackInvoked = 0;
     __weak typeof(self) _self = self;
     // allow only one outgoing RPC call at a time
     dispatch_semaphore_wait(self.rpcLock, DISPATCH_TIME_FOREVER);
@@ -71,8 +73,11 @@ void qmp_rpc_call(CFDictionaryRef args, CFDictionaryRef *ret, Error **err, void 
         assert(!self.rpcCallback); // sync on rpcLock should prevent this!
         self.rpcCallback = ^(NSDictionary *ret_dict, NSString *ret_err){
             NSCAssert(ret_dict || ret_err, @"Both dict and err are null");
-            nserr = ret_err;
-            dict = ret_dict;
+            // ensure we only write the return values once if there is a race
+            if (!atomic_fetch_add(&isRpcCallbackInvoked, 1)) {
+                nserr = ret_err;
+                dict = ret_dict;
+            }
             _self.rpcCallback = nil;
             dispatch_semaphore_signal(rpcResponseEvent);
         };
@@ -110,6 +115,12 @@ void qmp_rpc_call(CFDictionaryRef args, CFDictionaryRef *ret, Error **err, void 
         self.rpcLock = dispatch_semaphore_create(1);
     }
     return self;
+}
+
+- (void)cancel {
+    if (self.rpcCallback) {
+        self.rpcCallback(nil, NSLocalizedString(@"Operation was canceled.", "QEMUManager"));
+    }
 }
 
 - (void)jsonStream:(QEMUJSONStream *)stream connected:(BOOL)connected {
