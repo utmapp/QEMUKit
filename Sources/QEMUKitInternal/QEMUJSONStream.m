@@ -196,8 +196,8 @@ enum ParserState {
 
 - (void)port:(id<QEMUPort>)port didRecieveData:(NSData *)data {
     assert(self.port == port);
-    [self.data appendData:data];
     dispatch_async(self.recieveQueue, ^{
+        [self.data appendData:data];
         while (self.parsedBytes < [self.data length]) {
             [self parseData];
         }
