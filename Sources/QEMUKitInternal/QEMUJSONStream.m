@@ -83,12 +83,13 @@ enum ParserState {
         if (byteRange.location + byteRange.length < self.parsedBytes) {
             return;
         }
+        assert(self.parsedBytes >= byteRange.location);
         for (NSUInteger i = self.parsedBytes - byteRange.location; i < byteRange.length; i++) {
             if (self.state == PARSER_WAITING_FOR_DELIMITER) {
-                skipLength++;
                 if (str[i] == (char)0xFF) {
                     self.state = PARSER_NOT_IN_STRING;
-                    self.openCurlyCount = 0;
+                    self.openCurlyCount = -1;
+                    skipLength = self.parsedBytes + 1;
                 }
                 self.parsedBytes++;
                 continue;
@@ -138,11 +139,11 @@ enum ParserState {
                     }
                     default: {
                         // force reset parser
-                        if (str[i] == (char)0xFF ||
-                            (str[i] >= '\0' && str[i] < ' ' && str[i] != '\t' && str[i] != '\r' && str[i] != '\n')) {
+                        if (str[i] == (char)0xFF) {
                             QEMUKitLog(@"Resetting parser...");
                             self.state = PARSER_NOT_IN_STRING;
-                            self.openCurlyCount = 0;
+                            self.openCurlyCount = -1;
+                            skipLength = self.parsedBytes + 1;
                         }
                     }
                 }
