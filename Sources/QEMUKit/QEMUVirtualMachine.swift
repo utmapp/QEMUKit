@@ -172,13 +172,15 @@ public actor QEMUVirtualMachine {
                 await didConnectQMP()
             }
         }
-        
-        // enter command mode
+
+        // check if we had already terminated due to early error
         try Task.checkCancellation()
+        guard monitor.isConnected else {
+            throw QEMUError.terminatedUnexpectedly
+        }
+
+        // enter command mode
         try await monitor.qmpEnterCommandMode()
-#if DEBUG
-        assert(monitor.isConnected)
-#endif
         self.monitor = monitor
         self.launcher = launcher
         self.interface = interface
@@ -210,28 +212,18 @@ public actor QEMUVirtualMachine {
     
     /// Forceabily stop a running instance of QEMU
     public func kill() {
-        // if we are in stopped or starting, we cannot proceed
-        guard state != .starting else {
-            didError(QEMUError.terminatedUnexpectedly)
-            return
-        }
         guard state != .stopped else {
             return // nothing to do
         }
-#if DEBUG
-        assert(monitor != nil)
-        assert(launcher != nil)
-        assert(interface != nil)
-#endif
         state = .stopped
         // unregister delegates
-        monitor!.delegate = nil
-        launcher!.launcherDelegate = nil
-        interface!.connectDelegate = nil
+        monitor?.delegate = nil
+        launcher?.launcherDelegate = nil
+        interface?.connectDelegate = nil
         // stop process
-        launcher!.stopQemu()
-        interface!.disconnect()
-        launcher!.logging?.endLog()
+        launcher?.stopQemu()
+        interface?.disconnect()
+        launcher?.logging?.endLog()
         // cancel any RPC
         monitor?.cancel()
         guestAgent?.cancel()
@@ -308,10 +300,10 @@ public actor QEMUVirtualMachine {
     }
     
     /// Cancel the interface connection attempt
-    private func interfaceConnectCancel() {
+    private func interfaceConnectCancel() -> Bool {
         // if we were raced and the retry was successful
         guard let attempt = interfaceConnectAttempt else {
-            return
+            return false
         }
 #if DEBUG
         assert(state == .starting)
@@ -319,6 +311,7 @@ public actor QEMUVirtualMachine {
         interfaceConnectAttempt = nil
         attempt.interface.disconnect()
         attempt.continuation.resume(throwing: CancellationError())
+        return true
     }
     
     /// Called when QMP posts a "will quip" event
@@ -337,9 +330,11 @@ public actor QEMUVirtualMachine {
     ///
     /// If QEMU is starting, ignore event, otherwise kill the service
     fileprivate func didStop() {
-        if state == .starting {
-            interfaceConnectCancel()
-        } else {
+        if let _qmpConnectContinuation = qmpConnectContinuation {
+            qmpConnectContinuation = nil
+            _qmpConnectContinuation.resume()
+        }
+        if state != .starting || !interfaceConnectCancel() {
             kill()
         }
     }
