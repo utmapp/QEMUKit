@@ -247,8 +247,10 @@ public actor QEMUVirtualMachine {
 #if DEBUG
         assert(state == .starting)
 #endif
-        interfaceConnectAttempt?.continuation.resume(returning: monitor)
-        interfaceConnectAttempt = nil
+        if let attempt = interfaceConnectAttempt {
+            interfaceConnectAttempt = nil
+            attempt.continuation.resume(returning: monitor)
+        }
     }
     
     fileprivate func didConnectQMP() {
@@ -298,8 +300,9 @@ public actor QEMUVirtualMachine {
                 }
             }
         } else {
-            attempt.continuation.resume(throwing: error)
             interfaceConnectAttempt = nil
+            attempt.interface.disconnect()
+            attempt.continuation.resume(throwing: error)
         }
         return true
     }
@@ -313,8 +316,9 @@ public actor QEMUVirtualMachine {
 #if DEBUG
         assert(state == .starting)
 #endif
-        attempt.continuation.resume(throwing: CancellationError())
         interfaceConnectAttempt = nil
+        attempt.interface.disconnect()
+        attempt.continuation.resume(throwing: CancellationError())
     }
     
     /// Called when QMP posts a "will quip" event
@@ -333,10 +337,11 @@ public actor QEMUVirtualMachine {
     ///
     /// If QEMU is starting, ignore event, otherwise kill the service
     fileprivate func didStop() {
-        guard state != .starting else {
-            return
+        if state == .starting {
+            interfaceConnectCancel()
+        } else {
+            kill()
         }
-        kill()
     }
 }
 
