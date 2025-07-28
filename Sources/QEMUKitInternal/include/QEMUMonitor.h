@@ -37,6 +37,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)mouseIndexForAbsolute:(BOOL)absolute withCompletion:(void (^)(int64_t, NSError * _Nullable))completion;
 - (void)mouseSelect:(int64_t)index withCompletion:(void (^)(NSString * _Nullable, NSError * _Nullable))completion;
 
+- (void)sendKeysRaw:(NSArray<NSNumber *> *)keysRaw holdTime:(NSInteger)holdTime withCompletion:(void (^)(NSError * _Nullable))completion;
+
 @end
 
 NS_ASSUME_NONNULL_END

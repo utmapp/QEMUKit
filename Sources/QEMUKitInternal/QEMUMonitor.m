@@ -290,4 +290,28 @@ qapi_enum_handler_registry qapi_enum_handler_registry_data = {
     [self qmpHmpCommand:cmd completion:completion];
 }
 
+- (void)sendKeysRaw:(NSArray<NSNumber *> *)keysRaw holdTime:(NSInteger)holdTime withCompletion:(void (^)(NSError * _Nullable))completion {
+    KeyValue *v = NULL;
+    KeyValueList *head = NULL, **tail = &head;
+    for (NSNumber *num in keysRaw) {
+        v = g_malloc0(sizeof(*v));
+        v->type = KEY_VALUE_KIND_QCODE;
+        v->u.qcode.data = (QKeyCode)num.integerValue;
+        QAPI_LIST_APPEND(tail, v);
+    }
+    dispatch_async(self.monitorQueue, ^{
+        Error *qerr = NULL;
+        NSError *err;
+        qmp_send_key(head, holdTime != 0, holdTime, &qerr, (__bridge void *)self);
+        if (qerr) {
+            err = [self errorForQerror:qerr];
+            error_free(qerr);
+        }
+        qapi_free_KeyValueList(head);
+        if (completion) {
+            completion(err);
+        }
+    });
+}
+
 @end

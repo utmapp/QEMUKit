@@ -30,5 +30,6 @@
 #include "QEMUMonitorDelegate.h"
 #include "QEMUPort.h"
 #include "QEMUQcow2.h"
+#include "QEMUKeyCode.h"
 
 #endif /* QEMUKitInternal_h */
