@@ -210,7 +210,8 @@ static void cf_input_push(CFObjectInputVisitor *qiv,
     QSLIST_INSERT_HEAD(&qiv->stack, tos, node);
 }
 
-
+/* FIXME: re-enable checks once we support latest QAPI schema */
+#if 0
 static bool cf_input_check_struct(Visitor *v, Error **errp)
 {
     CFObjectInputVisitor *qiv = to_qiv(v);
@@ -229,6 +230,12 @@ static bool cf_input_check_struct(Visitor *v, Error **errp)
     
     return true;
 }
+#else
+static bool cf_input_check_struct(Visitor *v, Error **errp)
+{
+    return true;
+}
+#endif
 
 static void cf_input_stack_object_free(StackObject *tos)
 {
