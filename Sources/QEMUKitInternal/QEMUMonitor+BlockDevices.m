@@ -20,6 +20,31 @@
 #import "qapi-commands.h"
 #import "error.h"
 
+@interface QEMUSnapshot ()
+
+@property (nonatomic, readwrite) NSString *identifier;
+@property (nonatomic, readwrite) NSString *name;
+@property (nonatomic, readwrite) int64_t vmStateSize;
+@property (nonatomic, readwrite) NSDate *date;
+@property (nonatomic, readwrite) NSTimeInterval vmClock;
+
+@end
+
+@implementation QEMUSnapshot
+
+- (instancetype)initWithSnapshotInfo:(const SnapshotInfo *)info {
+    if (self = [super init]) {
+        self.identifier = [NSString stringWithUTF8String:info->id];
+        self.name = [NSString stringWithUTF8String:info->name];
+        self.vmStateSize = info->vm_state_size;
+        self.date = [NSDate dateWithTimeIntervalSince1970:info->date_sec + info->date_nsec / 1e9];
+        self.vmClock = info->vm_clock_sec + info->vm_clock_nsec / 1e9;
+    }
+    return self;
+}
+
+@end
+
 @implementation QEMUMonitor (BlockDevices)
 
 - (NSDictionary<NSString *, NSString *> *)removableDrives {
@@ -84,6 +109,35 @@
         return NO;
     }
     return YES;
+}
+
+- (NSArray<QEMUSnapshot *> *)snapshotsWithError:(NSError * _Nullable __autoreleasing *)error {
+    BlockDeviceInfoList *nodes = NULL;
+    Error *qerr = NULL;
+    nodes = qmp_query_named_block_nodes(true, true, &qerr, (__bridge void *)self);
+    if (qerr) {
+        if (error) {
+            *error = [self errorForQerror:qerr];
+        }
+        error_free(qerr);
+        return nil;
+    }
+    NSMutableDictionary<NSString *, QEMUSnapshot *> *snapshots = [NSMutableDictionary dictionary];
+    for (BlockDeviceInfoList *list = nodes; list; list = list->next) {
+        const ImageInfo *image = list->value->image;
+        if (!image || !image->has_snapshots) {
+            continue;
+        }
+        for (SnapshotInfoList *item = image->snapshots; item; item = item->next) {
+            QEMUSnapshot *snapshot = [[QEMUSnapshot alloc] initWithSnapshotInfo:item->value];
+            // the node with the VM state describes the whole snapshot
+            if (!snapshots[snapshot.name] || snapshot.vmStateSize > snapshots[snapshot.name].vmStateSize) {
+                snapshots[snapshot.name] = snapshot;
+            }
+        }
+    }
+    qapi_free_BlockDeviceInfoList(nodes);
+    return snapshots.allValues;
 }
 
 @end

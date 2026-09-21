@@ -22,6 +22,14 @@
 #import "qapi-events.h"
 #import "error.h"
 
+extern NSString *const kQEMUKitErrorDomain;
+
+@interface QEMUMonitor (Jobs)
+
+- (void)jobDidConclude:(NSString *)jobId isConnected:(BOOL)isConnected;
+
+@end
+
 static void qemukit_shutdown_handler(bool guest, ShutdownCause reason, void *ctx) {
     QEMUMonitor *self = (__bridge QEMUMonitor *)ctx;
     [self.delegate qemuWillQuit:self guest:guest];
@@ -101,6 +109,13 @@ static void qemukit_migration_handler(MigrationStatus status, void *ctx) {
     
 }
 
+static void qemukit_job_status_change_handler(const char *id, JobStatus status, void *ctx) {
+    QEMUMonitor *self = (__bridge QEMUMonitor *)ctx;
+    if (status == JOB_STATUS_CONCLUDED) {
+        [self jobDidConclude:[NSString stringWithUTF8String:id] isConnected:YES];
+    }
+}
+
 static void qemukit_migration_pass_handler(int64_t pass, void *ctx) {
     
 }
@@ -124,9 +139,13 @@ qapi_enum_handler_registry qapi_enum_handler_registry_data = {
     .qapi_spice_migrate_completed_handler = qemukit_spice_migrate_completed_handler,
     .qapi_migration_handler = qemukit_migration_handler,
     .qapi_migration_pass_handler = qemukit_migration_pass_handler,
+    .qapi_job_status_change_handler = qemukit_job_status_change_handler,
 };
 
 @interface QEMUMonitor ()
+
+/// Called once the job with the identifier in the key concludes, with NO if QEMU went away before that
+@property (nonatomic) NSMutableDictionary<NSString *, void (^)(BOOL)> *jobCompletions;
 
 @property (nonatomic) dispatch_queue_t monitorQueue;
 
@@ -244,19 +263,189 @@ qapi_enum_handler_registry qapi_enum_handler_registry_data = {
     [self qmpPowerCommand:@"quit" completion:completion];
 }
 
+#pragma mark - Snapshots
+
+- (void)setIsConnected:(BOOL)isConnected {
+    [super setIsConnected:isConnected];
+    if (!isConnected) {
+        NSArray<NSString *> *jobIds;
+        @synchronized (self) {
+            jobIds = self.jobCompletions.allKeys;
+        }
+        for (NSString *jobId in jobIds) {
+            [self jobDidConclude:jobId isConnected:NO];
+        }
+    }
+}
+
+- (void)jobDidConclude:(NSString *)jobId isConnected:(BOOL)isConnected {
+    void (^jobCompletion)(BOOL);
+    @synchronized (self) {
+        jobCompletion = self.jobCompletions[jobId];
+        [self.jobCompletions removeObjectForKey:jobId];
+    }
+    if (jobCompletion) {
+        jobCompletion(isConnected);
+    }
+}
+
+- (NSError *)snapshotErrorWithDescription:(NSString *)description {
+    return [NSError errorWithDomain:kQEMUKitErrorDomain code:-1 userInfo:@{NSLocalizedDescriptionKey: description}];
+}
+
+/// Find the nodes that a snapshot is made of
+///
+/// Like QEMU does for `savevm`, this is every device with writable media and all of them have to support snapshots.
+/// - Parameters:
+///   - snapshot: If set, only return the nodes that have this snapshot and put the one that holds its VM state first
+///   - error: Error if the query failed or a device does not support snapshots
+/// - Returns: Node names or nil on error
+- (NSArray<NSString *> *)snapshotNodesContaining:(nullable NSString *)snapshot error:(NSError * _Nullable __autoreleasing *)error {
+    Error *qerr = NULL;
+    BlockInfoList *block = qmp_query_block(&qerr, (__bridge void *)self);
+    if (qerr) {
+        if (error) {
+            *error = [self errorForQerror:qerr];
+        }
+        error_free(qerr);
+        return nil;
+    }
+    NSMutableArray<NSString *> *nodes = [NSMutableArray array];
+    NSString *unsupported = nil;
+    for (BlockInfoList *list = block; list; list = list->next) {
+        const BlockInfo *info = list->value;
+        if (!info->has_inserted || info->inserted->ro || !info->inserted->has_node_name) {
+            continue;
+        }
+        NSString *node = [NSString stringWithUTF8String:info->inserted->node_name];
+        if (strcmp(info->inserted->drv, "qcow2") != 0) {
+            unsupported = [NSString stringWithUTF8String:info->device];
+        } else if (!snapshot) {
+            [nodes addObject:node];
+        } else if (info->inserted->image->has_snapshots) {
+            for (SnapshotInfoList *item = info->inserted->image->snapshots; item; item = item->next) {
+                if ([snapshot isEqualToString:[NSString stringWithUTF8String:item->value->name]]) {
+                    if (item->value->vm_state_size > 0) {
+                        [nodes insertObject:node atIndex:0];
+                    } else {
+                        [nodes addObject:node];
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    qapi_free_BlockInfoList(block);
+    if (unsupported && !snapshot) {
+        if (error) {
+            *error = [self snapshotErrorWithDescription:[NSString stringWithFormat:NSLocalizedString(@"Device '%@' is writable but does not support snapshots.", "QEMUMonitor"), unsupported]];
+        }
+        return nil;
+    }
+    if (nodes.count == 0) {
+        if (error) {
+            *error = [self snapshotErrorWithDescription:snapshot ? [NSString stringWithFormat:NSLocalizedString(@"Snapshot '%@' does not exist.", "QEMUMonitor"), snapshot] : NSLocalizedString(@"No device supports snapshots.", "QEMUMonitor")];
+        }
+        return nil;
+    }
+    return nodes;
+}
+
+/// Run one of the snapshot jobs
+///
+/// QEMU does not respond while it saves or loads the state of the VM, which can take a long time. A job is only started
+/// by its command and announces with an event when it is done, so nothing has to wait for a response in the meantime.
+/// - Parameters:
+///   - snapshot: If set, the job works on the nodes that have this snapshot
+///   - start: Issue the command that starts the job
+///   - completion: Called with an empty string or with the error of the job
+- (void)qmpSnapshotJobForExisting:(nullable NSString *)snapshot
+                            start:(void (^)(const char *jobId, const char *vmstate, strList *devices, Error **errp))start
+                       completion:(void (^)(NSString * _Nullable, NSError * _Nullable))completion {
+    dispatch_async(self.monitorQueue, ^{
+        NSError *err;
+        NSArray<NSString *> *nodes = [self snapshotNodesContaining:snapshot error:&err];
+        if (!nodes) {
+            completion(nil, err);
+            return;
+        }
+        strList *devices = NULL;
+        for (NSString *node in nodes.reverseObjectEnumerator) {
+            strList *item = g_malloc0(sizeof(*item));
+            item->value = g_strdup(node.UTF8String);
+            item->next = devices;
+            devices = item;
+        }
+        NSString *jobId = [@"qemukit-" stringByAppendingString:NSUUID.UUID.UUIDString];
+        // the job may conclude before the command that started it returns
+        @synchronized (self) {
+            if (!self.jobCompletions) {
+                self.jobCompletions = [NSMutableDictionary dictionary];
+            }
+            self.jobCompletions[jobId] = ^(BOOL isConnected) {
+                if (!isConnected) {
+                    completion(nil, [self snapshotErrorWithDescription:NSLocalizedString(@"QEMU exited before the snapshot operation completed.", "QEMUMonitor")]);
+                    return;
+                }
+                dispatch_async(self.monitorQueue, ^{
+                    completion(@"", [self concludeJob:jobId]);
+                });
+            };
+        }
+        Error *qerr = NULL;
+        start(jobId.UTF8String, nodes.firstObject.UTF8String, devices, &qerr);
+        qapi_free_strList(devices);
+        if (qerr) {
+            @synchronized (self) {
+                [self.jobCompletions removeObjectForKey:jobId];
+            }
+            completion(nil, [self errorForQerror:qerr]);
+            error_free(qerr);
+        }
+    });
+}
+
+/// Collect the result of a job that concluded and let QEMU forget about it
+/// - Returns: Error of the job if it failed
+- (nullable NSError *)concludeJob:(NSString *)jobId {
+    NSError *err = nil;
+    Error *qerr = NULL;
+    JobInfoList *jobs = qmp_query_jobs(&qerr, (__bridge void *)self);
+    if (qerr) {
+        err = [self errorForQerror:qerr];
+        error_free(qerr);
+        return err;
+    }
+    for (JobInfoList *list = jobs; list; list = list->next) {
+        if (strcmp(list->value->id, jobId.UTF8String) == 0 && list->value->has_error) {
+            err = [self snapshotErrorWithDescription:[NSString stringWithUTF8String:list->value->error]];
+        }
+    }
+    qapi_free_JobInfoList(jobs);
+    qmp_job_dismiss(jobId.UTF8String, &qerr, (__bridge void *)self);
+    if (qerr) {
+        QEMUKitLog(@"Failed to dismiss job %@: %s", jobId, error_get_pretty(qerr));
+        error_free(qerr);
+    }
+    return err;
+}
+
 - (void)qemuSaveSnapshot:(NSString *)snapshot withCompletion:(void (^)(NSString * _Nullable, NSError * _Nullable))completion {
-    NSString *cmd = [NSString stringWithFormat:@"savevm %@", snapshot];
-    [self qmpHmpCommand:cmd completion:completion];
+    [self qmpSnapshotJobForExisting:nil start:^(const char *jobId, const char *vmstate, strList *devices, Error **errp) {
+        qmp_snapshot_save(jobId, snapshot.UTF8String, vmstate, devices, errp, (__bridge void *)self);
+    } completion:completion];
 }
 
 - (void)qemuDeleteSnapshot:(NSString *)snapshot withCompletion:(void (^)(NSString * _Nullable, NSError * _Nullable))completion {
-    NSString *cmd = [NSString stringWithFormat:@"delvm %@", snapshot];
-    [self qmpHmpCommand:cmd completion:completion];
+    [self qmpSnapshotJobForExisting:snapshot start:^(const char *jobId, const char *vmstate, strList *devices, Error **errp) {
+        qmp_snapshot_delete(jobId, snapshot.UTF8String, devices, errp, (__bridge void *)self);
+    } completion:completion];
 }
 
 - (void)qemuRestoreSnapshot:(NSString *)snapshot withCompletion:(void (^)(NSString * _Nullable, NSError * _Nullable))completion {
-    NSString *cmd = [NSString stringWithFormat:@"loadvm %@", snapshot];
-    [self qmpHmpCommand:cmd completion:completion];
+    [self qmpSnapshotJobForExisting:snapshot start:^(const char *jobId, const char *vmstate, strList *devices, Error **errp) {
+        qmp_snapshot_load(jobId, snapshot.UTF8String, vmstate, devices, errp, (__bridge void *)self);
+    } completion:completion];
 }
 
 - (void)mouseIndexForAbsolute:(BOOL)absolute withCompletion:(void (^)(int64_t, NSError * _Nullable))completion {
