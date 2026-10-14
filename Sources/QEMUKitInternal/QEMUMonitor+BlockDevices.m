@@ -64,7 +64,7 @@
         return nil;
     }
     id dict = [NSMutableDictionary<NSString *, NSString *> dictionary];
-    for (BlockInfoList *list = block; list->next; list = list->next) {
+    for (BlockInfoList *list = block; list; list = list->next) {
         const BlockInfo *info = list->value;
         if (info->removable) {
             NSString *drive = [NSString stringWithUTF8String:info->device];
