@@ -29,6 +29,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readwrite) BOOL isConnected;
 @property (nonatomic, readonly) NSInteger timeoutSeconds;
 @property (nonatomic, readonly) BOOL shouldSynchronizeParser;
+/// Whether the other end may send asynchronous events (QMP does, the guest agent does not)
+@property (nonatomic, readonly) BOOL acceptsEvents;
 
 - (__autoreleasing NSError *)errorForQerror:(Error *)qerr;
 - (BOOL)didGetUnhandledKey:(NSString *)key value:(id)value;

@@ -39,6 +39,11 @@ extern NSString *const kQEMUKitErrorDomain;
     }
 }
 
+- (BOOL)acceptsEvents {
+    // the guest agent protocol has no events: never let the guest raise QMP events
+    return NO;
+}
+
 - (instancetype)initWithPort:(id<QEMUPort>)port {
     if (self = [super initWithPort:port]) {
         dispatch_queue_attr_t attr = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, 0);
