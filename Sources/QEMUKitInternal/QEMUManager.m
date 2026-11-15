@@ -55,6 +55,10 @@ typedef void(^rpcCompletionHandler_t)(NSDictionary *, NSString *);
     return NO;
 }
 
+- (BOOL)acceptsEvents {
+    return YES;
+}
+
 - (void)setLogging:(QEMULogging *)logging {
     _logging = logging;
     self.jsonStream.logging = logging;
@@ -151,17 +155,27 @@ void qmp_rpc_call(CFDictionaryRef args, CFDictionaryRef *ret, Error **err, void 
             });
             *stop = YES;
         } else if ([key isEqualToString:@"error"]) {
+            // the guest agent's replies come from the guest, so do not trust their shape
+            id desc = [val isKindOfClass:[NSDictionary class]] ? val[@"desc"] : nil;
+            if (![desc isKindOfClass:[NSString class]]) {
+                desc = NSLocalizedString(@"Unknown error.", "QEMUManager");
+            }
             dispatch_async(self.rpcQueue, ^{
                 if (self.rpcCallback) {
-                    self.rpcCallback(nil, dict[@"error"][@"desc"]);
+                    self.rpcCallback(nil, desc);
                 } else {
                     QEMUKitLog(@"Got unexpected 'error' response: %@", dict);
                 }
             });
             *stop = YES;
         } else if ([key isEqualToString:@"event"]) {
-            const char *event = [dict[@"event"] cStringUsingEncoding:NSASCIIStringEncoding];
-            qapi_event_dispatch(event, (__bridge CFTypeRef)dict, (__bridge void *)self);
+            // the event dispatcher aborts on a name it does not know, so check it first
+            const char *event = [val isKindOfClass:[NSString class]] ? [val cStringUsingEncoding:NSASCIIStringEncoding] : NULL;
+            if (!self.acceptsEvents || qapi_enum_parse(&QAPIEvent_lookup, event, -1, NULL) < 0) {
+                QEMUKitLog(@"Ignoring unexpected event: %.64s", event ? event : "(not a string)");
+            } else {
+                qapi_event_dispatch(event, (__bridge CFTypeRef)dict, (__bridge void *)self);
+            }
             *stop = YES;
         } else if ([self didGetUnhandledKey:key value:val]) {
             *stop = YES;
